@@ -15,7 +15,7 @@ from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from database import get_db, create_tables, DocumentChunk, ChatHistory, User, UserRole
+from database import get_db, create_tables, DocumentChunk, ChatHistory, User, UserRole, ClaimsList, ClaimsDetail
 import numpy as np
 import bcrypt
 import jwt
@@ -359,6 +359,26 @@ async def get_status(db: Session = Depends(get_db)):
             "error": str(e),
             "api_key_configured": bool(os.getenv("GOOGLE_API_KEY"))
         }
+
+@app.get("/claims")
+async def get_claims(db: Session = Depends(get_db)):
+    """Get all claims with their details"""
+    try:
+        claims = db.query(ClaimsList).all()
+        return {"claims": claims, "count": len(claims)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching claims: {str(e)}")
+
+@app.get("/claims/{claim_id}")
+async def get_claim_details(claim_id: int, db: Session = Depends(get_db)):
+    """Get specific claim with details"""
+    try:
+        claim = db.query(ClaimsList).filter(ClaimsList.id == claim_id).first()
+        if not claim:
+            raise HTTPException(status_code=404, detail="Claim not found")
+        return claim
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching claim: {str(e)}")
 
 @app.on_event("startup")
 async def startup_event():
