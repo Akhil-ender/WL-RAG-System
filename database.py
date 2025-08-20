@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, func, Enum
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, func, Enum, Numeric, Date, ForeignKey
+from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import UUID
 from pgvector.sqlalchemy import Vector
@@ -50,6 +50,31 @@ class DocumentChunk(Base):
     document_name = Column(String(255), nullable=True)
     chunk_index = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=func.now())
+
+class ClaimsList(Base):
+    __tablename__ = "claims_list"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    patient_name = Column(String(255), nullable=False)
+    billed_amount = Column(Numeric(12, 2), nullable=False)
+    paid_amount = Column(Numeric(12, 2), nullable=False)
+    status = Column(String(50), nullable=False)
+    insurer_name = Column(String(255), nullable=False)
+    discharge_date = Column(Date, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    
+    details = relationship("ClaimsDetail", back_populates="claim")
+
+class ClaimsDetail(Base):
+    __tablename__ = "claims_detail"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    claim_id = Column(Integer, ForeignKey("claims_list.id"), nullable=False, index=True)
+    denial_reason = Column(Text, nullable=True)
+    cpt_codes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    
+    claim = relationship("ClaimsList", back_populates="details")
 
 def get_db():
     db = SessionLocal()
