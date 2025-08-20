@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
@@ -83,6 +83,11 @@ class Text2SQLResponse(BaseModel):
     sql_query: str
     results: List[dict]
     created_at: datetime
+
+class CSVUploadResponse(BaseModel):
+    message: str
+    records_loaded: int
+    table_name: str
 
 
 def get_pdf_text(pdf_files: List[UploadFile]) -> str:
@@ -187,6 +192,15 @@ def get_current_user(db: Session = Depends(get_db), token_data: dict = Depends(v
             detail="User not found"
         )
     return user
+
+def get_admin_user(current_user: User = Depends(get_current_user)):
+    """Verify current user has admin role"""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
 
 @app.get("/")
 async def root():
@@ -392,7 +406,7 @@ async def get_claim_details(claim_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error fetching claim: {str(e)}")
 
 @app.post("/text2sql", response_model=Text2SQLResponse)
-async def text2sql(request: Text2SQLRequest, db: Session = Depends(get_db)):
+async def text2sql(request: Text2SQLRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Convert natural language questions to SQL queries and execute them"""
     try:
         database_url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost/pdf_chat_db")
@@ -422,6 +436,76 @@ async def text2sql(request: Text2SQLRequest, db: Session = Depends(get_db)):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing text2sql request: {str(e)}")
+
+@app.post("/upload-csv", response_model=CSVUploadResponse)
+async def upload_csv(
+    file: UploadFile = File(...),
+    table_name: str = Form(...),
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_admin_user)
+):
+    """Upload CSV file and load data into Claims tables (Admin only)"""
+    try:
+        if not file.filename.endswith('.csv'):
+            raise HTTPException(status_code=400, detail="File must be a CSV")
+        
+        if table_name not in ['claims_list', 'claims_detail']:
+            raise HTTPException(status_code=400, detail="table_name must be 'claims_list' or 'claims_detail'")
+        
+        import pandas as pd
+        from io import StringIO
+        
+        content = await file.read()
+        csv_content = StringIO(content.decode('utf-8'))
+        df = pd.read_csv(csv_content, sep='|')
+        
+        records_loaded = 0
+        
+        if table_name == 'claims_list':
+            db.execute(text("DELETE FROM claims_detail"))
+            db.execute(text("DELETE FROM claims_list"))
+            
+            for _, row in df.iterrows():
+                db.execute(text("""
+                    INSERT INTO claims_list (id, patient_name, billed_amount, paid_amount, status, insurer_name, discharge_date)
+                    VALUES (:id, :patient_name, :billed_amount, :paid_amount, :status, :insurer_name, :discharge_date)
+                """), {
+                    'id': int(row['id']),
+                    'patient_name': str(row['patient_name']),
+                    'billed_amount': float(row['billed_amount']),
+                    'paid_amount': float(row['paid_amount']),
+                    'status': str(row['status']),
+                    'insurer_name': str(row['insurer_name']),
+                    'discharge_date': pd.to_datetime(row['discharge_date']).date()
+                })
+                records_loaded += 1
+        
+        elif table_name == 'claims_detail':
+            db.execute(text("DELETE FROM claims_detail"))
+            
+            for _, row in df.iterrows():
+                db.execute(text("""
+                    INSERT INTO claims_detail (id, claim_id, denial_reason, cpt_codes)
+                    VALUES (:id, :claim_id, :denial_reason, :cpt_codes)
+                """), {
+                    'id': int(row['id']),
+                    'claim_id': int(row['claim_id']),
+                    'denial_reason': str(row['denial_reason']) if pd.notna(row['denial_reason']) and row['denial_reason'] != 'N/A' else None,
+                    'cpt_codes': str(row['cpt_codes']) if pd.notna(row['cpt_codes']) else None
+                })
+                records_loaded += 1
+        
+        db.commit()
+        
+        return CSVUploadResponse(
+            message=f"Successfully uploaded {records_loaded} records to {table_name}",
+            records_loaded=records_loaded,
+            table_name=table_name
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error uploading CSV: {str(e)}")
 
 @app.on_event("startup")
 async def startup_event():
