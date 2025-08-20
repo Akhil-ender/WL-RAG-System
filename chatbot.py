@@ -47,8 +47,8 @@ def get_conversational_chain():
 
     Answer:
     """
-    
-    model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
+
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0.6)
     prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
     chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
     return chain
@@ -88,7 +88,7 @@ def main():
         else:
             # Add user message to chat history
             st.session_state["messages"].append({"role": "user", "content": prompt})
-            
+
             # Load FAISS index and query
             embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
             new_db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
@@ -105,6 +105,6 @@ def main():
             # Display assistant response
             with st.chat_message("assistant"):
                 st.markdown(bot_response)
-      
+
 if __name__ == "__main__":
     main()
