@@ -6,6 +6,19 @@ export const api = axios.create({
   baseURL: API_BASE_URL,
 });
 
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 export const authAPI = {
   signup: (userData) => api.post('/signup', userData),
   login: (userData) => api.post('/login', userData),
@@ -22,4 +35,19 @@ export const chatAPI = {
   },
   sendMessage: (question) => api.post('/chat', { question }),
   getStatus: () => api.get('/status'),
+};
+
+export const text2sqlAPI = {
+  query: (question, top_k = 3) => api.post('/text2sql', { question, top_k }),
+};
+
+export const csvAPI = {
+  upload: (file, table_name) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('table_name', table_name);
+    return api.post('/upload-csv', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
 };

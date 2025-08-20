@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import PDFUpload from '../Upload/PDFUpload';
 import ChatInterface from '../Chat/ChatInterface';
+import Text2SQL from '../Text2SQL/Text2SQL';
+import CSVUpload from '../CSVUpload/CSVUpload';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -41,11 +43,27 @@ const Dashboard = () => {
           >
             Chat
           </button>
+          <button 
+            className={`tab-button ${activeTab === 'text2sql' ? 'active' : ''}`}
+            onClick={() => setActiveTab('text2sql')}
+          >
+            Text to SQL
+          </button>
+          {user?.role === 'ADMIN' && (
+            <button 
+              className={`tab-button ${activeTab === 'csv-upload' ? 'active' : ''}`}
+              onClick={() => setActiveTab('csv-upload')}
+            >
+              CSV Upload
+            </button>
+          )}
         </div>
         
         <div className="tab-content">
           {activeTab === 'upload' && <PDFUpload />}
           {activeTab === 'chat' && <ChatInterface />}
+          {activeTab === 'text2sql' && <Text2SQL />}
+          {activeTab === 'csv-upload' && <CSVUpload />}
         </div>
       </main>
     </div>
