@@ -12,6 +12,8 @@ import google.generativeai as genai
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
+from langchain_community.utilities.sql_database import SQLDatabase
+from langchain.chains import create_sql_query_chain
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -71,6 +73,15 @@ class UserResponse(BaseModel):
     username: str
     email: str
     role: str
+
+class Text2SQLRequest(BaseModel):
+    question: str
+    top_k: int = 3
+
+class Text2SQLResponse(BaseModel):
+    question: str
+    sql_query: str
+    results: List[dict]
     created_at: datetime
 
 
@@ -379,6 +390,38 @@ async def get_claim_details(claim_id: int, db: Session = Depends(get_db)):
         return claim
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching claim: {str(e)}")
+
+@app.post("/text2sql", response_model=Text2SQLResponse)
+async def text2sql(request: Text2SQLRequest, db: Session = Depends(get_db)):
+    """Convert natural language questions to SQL queries and execute them"""
+    try:
+        database_url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost/pdf_chat_db")
+        sql_db = SQLDatabase.from_uri(database_url)
+        
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0)
+        
+        chain = create_sql_query_chain(llm, sql_db, k=request.top_k)
+        
+        sql_query = chain.invoke({"question": request.question})
+        
+        if sql_query.startswith("```sql"):
+            sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+        
+        with sql_db._engine.connect() as conn:
+            result = conn.execute(text(sql_query))
+            rows = result.fetchall()
+            columns = result.keys()
+            
+            results = [dict(zip(columns, row)) for row in rows]
+        
+        return Text2SQLResponse(
+            question=request.question,
+            sql_query=sql_query,
+            results=results
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing text2sql request: {str(e)}")
 
 @app.on_event("startup")
 async def startup_event():

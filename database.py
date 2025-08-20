@@ -84,7 +84,18 @@ def get_db():
         db.close()
 
 def create_tables():
-    Base.metadata.create_all(bind=engine)
+    """Create database tables, skipping those that require PGVector extension"""
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Warning: Could not create all tables: {e}")
+        for table_name, table in Base.metadata.tables.items():
+            if table_name not in ['document_chunks']:  # Skip tables with vector columns
+                try:
+                    table.create(bind=engine, checkfirst=True)
+                    print(f"Created table: {table_name}")
+                except Exception as table_error:
+                    print(f"Could not create table {table_name}: {table_error}")
 
 if __name__ == "__main__":
     create_tables()
