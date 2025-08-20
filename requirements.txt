@@ -13,3 +13,7 @@ pgvector
 fastapi
 uvicorn
 python-multipart
+bcrypt
+PyJWT
+python-jose[cryptography]
+email-validator
